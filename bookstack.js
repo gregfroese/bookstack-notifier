@@ -6,12 +6,12 @@ const axios = require('axios').default;
 axios.defaults.baseURL = baseURL;
 axios.defaults.headers.common['Authorization'] = authToken;
 
+const fs = require('fs');
 const notifications = {};
-let tags = ["monitor"];
+let [tags, whitelist] = loadOptions();
 
 async function searchTag(tag) {
     try {
-    //   debug(2, "Searching for " + tag);
       const response = await axios.get('/search', {
         params: {
           query: "[" + tag + "]",
@@ -25,7 +25,7 @@ async function searchTag(tag) {
   }
 
  // Use Promise.all to wait for all API requests to complete
-async function searchTags() {
+async function searchTags(tags) {
     const promises = tags.map(tag => searchTag(tag));
     const results = await Promise.all(promises);
     return results.filter(result => result !== null);
@@ -33,7 +33,7 @@ async function searchTags() {
 
 // Find all users for the selected tag and record
 // them in the notifications array
-function processPages(results) {
+function processPages(results, tags) {
   try {
     results.forEach(pages => {
       pages.forEach(page => {
@@ -65,10 +65,16 @@ function addNotificationRecord(page, tag) {
 // This is just for debugging
 function printNotifications() {
   for( let email in notifications) {
+    console.log("");
+    console.log("Matches found for: " + email);
+    console.log("======================================");
+
     notifications[email].forEach(page => {
-    console.log(notifications);
+      console.log("Page ID: " + page.id + " - " + page.name);
+      // console.log(notifications);
     })
   }
+  console.log("");
 }
 
 function createEmailBody(pages) {
@@ -128,34 +134,60 @@ function sendNotifications() {
   }
 }
 
+function loadOptions() {
+  try {
+    const data = fs.readFileSync('options.json', 'utf8');
+    try {
+      const jsonData = JSON.parse(data);
+      return [jsonData.tags, jsonData.whitelist];
+    } catch (err) {
+      console.error('Error parsing JSON data:', err);
+    }
+  } catch (err) {
+    console.error('Error reading file:', err);
+  }
+}
+
 // Call the function to search for all tags
-function bookstack() {
-  searchTags()
-    .then(results => {
-      // Combine the results here
-      try {
-        processPages(results);
-      } catch(error) {
-        console.log("Error processing pages: " + error.message);
-      }
-      try {
-        // printNotifications();
-      } catch(error) {
-        console.log("Error printing notifications: " + error.message);
-      }
-      try {
-        if( typeof DEBUG === 'undefined' ) {
-          sendNotifications();
-        } else {
-          debug(1, "Emails not sent due to debugging");
+function bookstack(dryRun, verboseLevel) {
+
+  if( tags.length ) {
+    searchTags(tags)
+      .then(results => {
+        // Combine the results here
+        try {
+          processPages(results, tags);
+        } catch(error) {
+          console.log("Error processing pages: " + error.message);
         }
-      } catch(error) {
-        console.log("Error sending notifications: " + error.message);
-      }
-    })
-    .catch(error => {
-      console.error('Error searching for tags:', error.message);
-    });
+        try {
+          // printNotifications();
+        } catch(error) {
+          console.log("Error printing notifications: " + error.message);
+        }
+        try {
+          if( verboseLevel >= 1 ) {
+            printNotifications();
+          }
+        } catch(error) {
+          console.log("Error printing notifications: " + error.message);
+        }
+        try {
+          if( dryRun === false ) {
+            sendNotifications();
+          } else {
+            console.log("Emails not sent due to dry run mode");
+          }
+        } catch(error) {
+          console.log("Error sending notifications: " + error.message);
+        }
+      })
+      .catch(error => {
+        console.error('Error searching for tags:', error.message);
+      });
+    } else {
+      console.log("No tags defined.  Add tags in JSON format in tags.json");
+    }
 }
 
 module.exports = bookstack;
