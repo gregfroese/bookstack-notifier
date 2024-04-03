@@ -1,4 +1,6 @@
 const sendEmail = require('./emailSender');
+const debug = require('./debug');
+
 const baseURL = process.env.baseURL;
 const authToken = process.env.authToken;
 
@@ -8,7 +10,8 @@ axios.defaults.headers.common['Authorization'] = authToken;
 
 const fs = require('fs');
 const notifications = {};
-let [tags, whitelist] = loadOptions();
+let [tags, whitelistDomains] = loadOptions();
+printOptions();
 
 async function searchTag(tag) {
     try {
@@ -37,12 +40,14 @@ function processPages(results, tags) {
   try {
     results.forEach(pages => {
       pages.forEach(page => {
-        // console.log("Processing page: (" + page.id + " - " + page.name + ")");
+        debug(4, "Processing page: (" + page.id + " - " + page.name + ")");
         // debug(2, "Processing page: (" + page.id + " - " + page.name + ")");
         // search through all the tags
+        debug(5, "Page %s - %s has the following tags:", page.id, page.name);
+        debug(5, page.tags);
         page.tags.forEach(tag => {
           if( tags.includes(tag.name) && tag.value != "" ) {
-            // debug(2, "Found tag: " + tag.name + " with a value of " + tag.value);
+            debug(6, "Found tag: " + tag.name + " with a value of " + tag.value);
             addNotificationRecord(page, tag);
           }
         })
@@ -56,22 +61,43 @@ function processPages(results, tags) {
 
 function addNotificationRecord(page, tag) {
   if( notifications[tag.value] ) {
-    notifications[tag.value].push(page);
+    // this objectExists check is necessary because if you are looking for multiple
+    // tags, you can get the same page back multiple times in the result set
+    if(objectExists(notifications[tag.value], page) === false ) {
+      debug(3, "Adding a notification for %s for page %s - %s", tag.value, page.id, page.name);
+      notifications[tag.value].push(page);
+    } else {
+      debug(3, "Skipping a notification for %s for page %s - %s because it already exists", tag.value, page.id, page.name);
+    }
   } else {
     notifications[tag.value] = [page];
   }
 }
 
-// This is just for debugging
+function objectExists(arr, obj) {
+  return arr.some(item => item.id === obj.id);
+}
+
+function printOptions() {
+  debug(1, "Searching for the following tags:");
+  debug(1, tags);
+  debug(1, "");
+  debug(1, "The following domains are whitelisted:");
+  debug(1, whitelistDomains);
+  debug(1, "");
+}
 function printNotifications() {
   for( let email in notifications) {
+    let body = createEmailBody(notifications[email]);
+    let domain = extractDomain(email);
+    let whitelistResult = whitelistDomains.includes(domain) ? "Accepted" : "Rejected";
+
     console.log("");
-    console.log("Matches found for: " + email);
+    console.log("Matches found for: " + email+ " (" + whitelistResult + ")");
     console.log("======================================");
 
     notifications[email].forEach(page => {
-      console.log("Page ID: " + page.id + " - " + page.name);
-      // console.log(notifications);
+      console.log("Page id: " + page.id + " - " + page.name);
     })
   }
   console.log("");
@@ -87,7 +113,7 @@ function createEmailBody(pages) {
               <td>${page.updated_at}</td>
             </tr>`;
   }).join('');
-//   debug(3,tableRows);
+  debug(7,tableRows);
 
   // Create the HTML body
   let htmlBody = `
@@ -122,16 +148,27 @@ function createEmailBody(pages) {
       </body>
     </html>
   `;
-//   debug(4,htmlBody);
+  debug(7,htmlBody);
 
   return htmlBody;
 }
 
 function sendNotifications() {
   for( let email in notifications ) {
-    let body = createEmailBody(notifications[email]);
-    sendEmail(email, 'Bookstack notifications', body);
+    let domain = extractDomain(email);
+    let whitelistAccepted = whitelistDomains.includes(domain) ? true : false;
+    if( whitelistAccepted ) {
+      let body = createEmailBody(notifications[email]);
+      sendEmail(email, 'Bookstack notifications', body);
+    } else {
+      debug(1, email + ": Rejected - " + domain + " not on the whitelist");
+    }
   }
+}
+
+function extractDomain(email) {
+  const match = email.match(/@(.+)/);
+  return match ? match[1] : null;
 }
 
 function loadOptions() {
@@ -139,7 +176,7 @@ function loadOptions() {
     const data = fs.readFileSync('options.json', 'utf8');
     try {
       const jsonData = JSON.parse(data);
-      return [jsonData.tags, jsonData.whitelist];
+      return [jsonData.tags, jsonData.whitelistDomains];
     } catch (err) {
       console.error('Error parsing JSON data:', err);
     }
@@ -159,11 +196,6 @@ function bookstack(dryRun, verboseLevel) {
           processPages(results, tags);
         } catch(error) {
           console.log("Error processing pages: " + error.message);
-        }
-        try {
-          // printNotifications();
-        } catch(error) {
-          console.log("Error printing notifications: " + error.message);
         }
         try {
           if( verboseLevel >= 1 ) {
