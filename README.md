@@ -3,6 +3,7 @@ This script provides simple workflow by alerting tagged users that they have a p
 ## Installation
 ### Prerequisites
 1. NodeJS
+2. The following npm modules need to be installed: `npm install dotenv nodemailer minimist axios`
 
 ## Usage
 1. On your Bookstack instance, add a tag to a page and put in an email address for the value
