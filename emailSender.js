@@ -1,11 +1,14 @@
 // emailSender.js
 
 const nodemailer = require('nodemailer');
+const emailServer = process.env.emailServer;
+const emailPort = process.env.emailPort;
+const emailSender = process.env.emailSender;
 
 // Create a transporter object using the default SMTP transport
 let transporter = nodemailer.createTransport({
-  host: '192.168.5.3',
-  port: 25,
+  host: emailServer,
+  port: emailPort,
   secure: false, // true for 465, false for other ports
 //   auth: {
 //     user: 'your-email@example.com',
@@ -15,7 +18,7 @@ let transporter = nodemailer.createTransport({
 
 function sendEmail(to, subject, html) {
   let mailOptions = {
-    from: '"Bookstack Notifier" <greg.froese+bookstack@gmail.com>',
+    from: emailSender,
     to: to,
     subject: subject,
     html: html
