@@ -1,5 +1,7 @@
+const db = require('./bookstack_db');
 const sendEmail = require('./emailSender');
 const debug = require('./debug');
+const { format } = require('util');
 
 const baseURL = process.env.baseURL;
 const authToken = process.env.authToken;
@@ -152,19 +154,39 @@ function createEmailBody(pages) {
 
   return htmlBody;
 }
-
-function sendNotifications() {
-  for( let email in notifications ) {
+async function sendNotifications(dryRun) {
+  for (let email in notifications) {
     let domain = extractDomain(email);
-    let whitelistAccepted = whitelistDomains.includes(domain) ? true : false;
-    if( whitelistAccepted ) {
-      let body = createEmailBody(notifications[email]);
-      sendEmail(email, 'Bookstack notifications', body);
+    let whitelistAccepted = whitelistDomains.includes(domain);
+
+    if (whitelistAccepted) {
+      let entities = notifications[email];
+      let body = createEmailBody(entities);
+
+      if (!dryRun) {
+        try {
+          console.log("DOING ALL THE THINGS");
+          const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+          // Use Promise.all to wait for all queries to complete
+          await Promise.all(entities.map(async (entity) => {
+            const sql = format("INSERT INTO notifications (email, entity_id, entity_type, entity_name) values ('%s', %d, '%s', '%s')", email, entity.id, entity.type, entity.name);
+            await db.query(sql);
+          }));
+          
+          // sendEmail(email, 'Bookstack notifications', body);
+        } catch (error) {
+          console.error('Error inserting record:', error);
+        }
+      } else {
+        console.log("Emails not sent to %s due to dry run mode", email);
+      }
     } else {
       debug(1, email + ": Rejected - " + domain + " not on the whitelist");
     }
   }
 }
+
 
 function extractDomain(email) {
   const match = email.match(/@(.+)/);
@@ -186,7 +208,7 @@ function loadOptions() {
 }
 
 // Call the function to search for all tags
-function bookstack(dryRun, verboseLevel) {
+function start(dryRun, verboseLevel) {
 
   if( tags.length ) {
     searchTags(tags)
@@ -205,11 +227,7 @@ function bookstack(dryRun, verboseLevel) {
           console.log("Error printing notifications: " + error.message);
         }
         try {
-          if( dryRun === false ) {
-            sendNotifications();
-          } else {
-            console.log("Emails not sent due to dry run mode");
-          }
+          sendNotifications(dryRun);
         } catch(error) {
           console.log("Error sending notifications: " + error.message);
         }
@@ -222,4 +240,18 @@ function bookstack(dryRun, verboseLevel) {
     }
 }
 
-module.exports = bookstack;
+async function readData() {
+  try {
+    const results = await db.query('SELECT * FROM notifications');
+    processRecords(results);
+  } catch (err) {
+    console.error('Error reading data:', err.message);
+  } finally {
+    db.close(); // Close the connection pool
+  }
+}
+
+function processRecords(rows) {
+  console.log(rows);
+}
+module.exports = { start, readData };

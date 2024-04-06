@@ -9,5 +9,6 @@ if( showHelp ) {
 }
 
 if( showHelp === false ) {
-  bookstack(dryRun, verboseLevel);
+  bookstack.start(dryRun, verboseLevel);
+  // bookstack.readData();
 }
