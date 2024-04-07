@@ -10,14 +10,20 @@ const pool = mysql.createPool({
 
 
 async function query(sql, args) {
-  const connection = await pool.getConnection();
-  console.log("Opened connection for %s", sql);
-  try {
-    const [rows] = await connection.execute(sql, args);
-    return rows;
-  } finally {
-    connection.release();
-    console.log("Releasing connection for %s", sql);
+  if( sql ) {
+    const connection = await pool.getConnection();
+    console.log("Opened connection for %s", sql);
+    try {
+      const [rows] = await connection.execute(sql, args);
+      return rows;
+    } catch(error) {
+      console.error("Error executing query: %s - $s", sql, error);
+    } finally {
+      connection.release();
+      console.log("Releasing connection for %s", sql);
+    }
+  } else {
+    console.error("No SQL defined");
   }
 }
 

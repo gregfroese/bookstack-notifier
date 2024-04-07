@@ -31,10 +31,10 @@ async function searchTag(tag) {
 
  // Use Promise.all to wait for all API requests to complete
 async function searchTags(tags) {
-    const promises = tags.map(tag => searchTag(tag));
-    const results = await Promise.all(promises);
-    return results.filter(result => result !== null);
-  }
+  const promises = tags.map(tag => searchTag(tag));
+  const results = await Promise.all(promises);
+  return results.filter(result => result !== null);
+}
 
 // Find all users for the selected tag and record
 // them in the notifications array
@@ -154,33 +154,34 @@ function createEmailBody(pages) {
 
   return htmlBody;
 }
+
+function domainWhitelisted(email) {
+  return whitelistDomains.includes(extractDomain(email));
+}
+
 async function sendNotifications(dryRun) {
+  const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  let approvedNotifications = [];
+
   for (let email in notifications) {
-    let domain = extractDomain(email);
-    let whitelistAccepted = whitelistDomains.includes(domain);
-
-    if (whitelistAccepted) {
-      let entities = notifications[email];
-      let body = createEmailBody(entities);
-
+    if (domainWhitelisted(email)) {
       if (!dryRun) {
-        const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
-
-        // Use Promise.all to wait for all queries to complete
-        await Promise.all(entities.map(async (entity) => {
-          const sql = format("INSERT INTO notifications (email, entity_id, entity_type, entity_name) values ('%s', %d, '%s', '%s')", email, entity.id, entity.type, entity.name);
-          // console.log(sql);
-          await db.query(sql);
-        }));
-        
-        // sendEmail(email, 'Bookstack notifications', body);
-      } else {
-        console.log("Emails not sent to %s due to dry run mode", email);
+        approvedNotifications.push({email: email, entities: notifications[email], body: createEmailBody(notifications[email])});
       }
     } else {
-      debug(1, email + ": Rejected - " + domain + " not on the whitelist");
+      debug(1, email + ": Rejected - " + email + " not on the whitelist");
     }
   }
+
+  const promises = approvedNotifications.map(async (notification) => {
+    await Promise.all(notification.entities.map(async (entity) => {
+      const sql = format("INSERT INTO notifications (email, entity_id, entity_type, entity_name) values ('%s', %d, '%s', '%s')", notification.email, entity.id, entity.type, entity.name);
+      console.log("Adding sql: %s", sql);
+      await db.query(sql);
+    }));
+  });
+  await Promise.all(promises);
+  // sendEmail(email, 'Bookstack notifications', body);
 }
 
 function extractDomain(email) {
@@ -221,7 +222,9 @@ function start(dryRun, verboseLevel) {
           console.log("Error printing notifications: " + error.message);
         }
         try {
+          console.log("------------------ Send Notifications Start -------------------------");
           sendNotifications(dryRun);
+          console.log("------------------ Send Notifications Complete  -------------------------");
         } catch(error) {
           console.log("Error sending notifications: " + error.message);
         }
