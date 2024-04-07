@@ -164,20 +164,16 @@ async function sendNotifications(dryRun) {
       let body = createEmailBody(entities);
 
       if (!dryRun) {
-        try {
-          console.log("DOING ALL THE THINGS");
-          const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
+        const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
-          // Use Promise.all to wait for all queries to complete
-          await Promise.all(entities.map(async (entity) => {
-            const sql = format("INSERT INTO notifications (email, entity_id, entity_type, entity_name) values ('%s', %d, '%s', '%s')", email, entity.id, entity.type, entity.name);
-            await db.query(sql);
-          }));
-          
-          // sendEmail(email, 'Bookstack notifications', body);
-        } catch (error) {
-          console.error('Error inserting record:', error);
-        }
+        // Use Promise.all to wait for all queries to complete
+        await Promise.all(entities.map(async (entity) => {
+          const sql = format("INSERT INTO notifications (email, entity_id, entity_type, entity_name) values ('%s', %d, '%s', '%s')", email, entity.id, entity.type, entity.name);
+          // console.log(sql);
+          await db.query(sql);
+        }));
+        
+        // sendEmail(email, 'Bookstack notifications', body);
       } else {
         console.log("Emails not sent to %s due to dry run mode", email);
       }
@@ -186,7 +182,6 @@ async function sendNotifications(dryRun) {
     }
   }
 }
-
 
 function extractDomain(email) {
   const match = email.match(/@(.+)/);
@@ -209,7 +204,6 @@ function loadOptions() {
 
 // Call the function to search for all tags
 function start(dryRun, verboseLevel) {
-
   if( tags.length ) {
     searchTags(tags)
       .then(results => {
